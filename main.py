@@ -14,11 +14,11 @@ import hashlib
 templates = Jinja2Templates(directory="templates")
 app = FastAPI()
 
-client_id = "Q2mJ77wHmN8OiXYuyoZDly0b0hViMTxWfYtosiEz" # os.getenv("client_id")
+client_id = os.getenv("client_id")
 client_secret = os.getenv("client_secret")
 redirect_uri = "http://localhost:8090/oauth/callback/easyVerein"
 authorization_path = "/oauth2/authorize/"
-base_uri = "http://localhost:8000"
+base_uri = "https://easyverein.com"
 access_token_path = "/oauth2/token/"
 code_verifier = ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(random.randint(43, 128)))
 
