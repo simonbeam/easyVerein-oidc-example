@@ -21,6 +21,7 @@ authorization_path = "/oauth2/authorize/"
 base_uri = "https://easyverein.com"
 access_token_path = "/oauth2/token/"
 code_verifier = ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(random.randint(43, 128)))
+scopes = ['openid', 'myself']
 
 
 @app.get('/oauth/providers')
@@ -30,7 +31,7 @@ def get_providers(request: Request):
     code_challenge = base64.urlsafe_b64encode(code_challenge).decode('utf-8').replace('=', '')
 
     # get the authorization url
-    easyVerein_auth_url = f"{base_uri}{authorization_path}?response_type=code&code_challenge={code_challenge}&code_challenge_method=S256&client_id={client_id}&redirect_uri={redirect_uri}"
+    easyVerein_auth_url = f"{base_uri}{authorization_path}?response_type=code&code_challenge={code_challenge}&code_challenge_method=S256&client_id={client_id}&redirect_uri={redirect_uri}&scope={"%20".join(scopes)}"
 
     return templates.TemplateResponse("providers.html",
                                       {"request": request, "easyVerein_auth_url": easyVerein_auth_url})
