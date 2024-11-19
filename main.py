@@ -21,7 +21,7 @@ authorization_path = "/oauth2/authorize/"
 base_uri = "https://easyverein.com"
 access_token_path = "/oauth2/token/"
 code_verifier = ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(random.randint(43, 128)))
-scopes = ['openid', 'myself']
+scopes = ['openid', 'myself', "profile"]
 
 
 @app.get('/oauth/providers')
@@ -71,6 +71,14 @@ def get_response_from_stack_exchange(code: str = "", error: str = ""):
     user_response = requests.get(f"{base_uri}/api/latest/member/me", headers={
         "Authorization": f"Bearer {access_token}"
     })
+
+    cd_response = requests.get(f"{base_uri}/api/latest/contact-details/me", headers={
+        "Authorization": f"Bearer {access_token}"
+    })
+
+    if cd_response.status_code == 200:
+        cd_data = cd_response.json()
+        print(cd_data)
 
     user_name = "Unknown :("
     if user_response.status_code == 200:
