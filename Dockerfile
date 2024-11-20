@@ -1,5 +1,7 @@
 FROM python:3.12
 
+ENV prefix_oidc='https://'
+
 WORKDIR /code
 
 COPY ./requirements.txt /code/requirements.txt

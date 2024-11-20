@@ -17,12 +17,13 @@ app = FastAPI()
 
 client_id = os.getenv("client_id")
 client_secret = os.getenv("client_secret")
-redirect_uri = "http://localhost:8090/oauth/callback/easyVerein"
 authorization_path = "/oauth2/authorize/"
 base_uri = "https://easyverein.com"
 access_token_path = "/oauth2/token/"
 code_verifier = ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(random.randint(43, 128)))
 scopes = ['openid', 'myself', "profile"]
+
+prefix = os.getenv("prefix_oidc", "http://")
 
 states = {"default": {
     "client_id": client_id,
@@ -31,6 +32,12 @@ states = {"default": {
     "scopes": scopes
 }}
 
+def get_redirect_url(request: Request) -> str:
+    base = str(request.base_url)
+    base = base.split("://")[1]
+    base = prefix + base
+    return base + "oauth/callback/easyVerein"
+
 @app.get("/")
 def index(request: Request):
     """
@@ -38,7 +45,7 @@ def index(request: Request):
     :param request:
     :return:
     """
-    state_redirect_uri = str(request.base_url) + "oauth/callback/easyVerein"
+    state_redirect_uri = get_redirect_url(request)
     return templates.TemplateResponse("index.html", {"request": request, "ruri": state_redirect_uri})
 
 
@@ -68,7 +75,7 @@ def get_providers(request: Request, state: str = "default"):
         return Response("Invalid state", status_code=400)
     state_client_id = states[state]["client_id"]
     state_base_uri = states[state]["url"]
-    state_redirect_uri = str(request.base_url) + "oauth/callback/easyVerein"
+    state_redirect_uri = get_redirect_url(request)
     state_scopes = states[state]["scopes"]
 
     # get the authorization url
@@ -99,7 +106,7 @@ def get_response_from_stack_exchange(request: Request, code: str = "", error: st
     state_client_id = states[state]["client_id"]
     state_client_secret = states[state]["client_secret"]
     state_base_uri = states[state]["url"]
-    state_redirect_uri = str(request.base_url) + "oauth/callback/easyVerein"
+    state_redirect_uri = get_redirect_url(request)
 
     resp = requests.post(f"{state_base_uri}{access_token_path}", data={
         "client_id": state_client_id,
