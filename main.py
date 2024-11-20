@@ -1,9 +1,10 @@
 import os
+from typing import Annotated
 
 import requests
-from fastapi import FastAPI
+from fastapi import FastAPI, Form, status
 from uuid import uuid4
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi import Request
 from fastapi.templating import Jinja2Templates
 import random
@@ -23,16 +24,56 @@ access_token_path = "/oauth2/token/"
 code_verifier = ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(random.randint(43, 128)))
 scopes = ['openid', 'myself', "profile"]
 
+states = {"default": {
+    "client_id": client_id,
+    "client_secret": client_secret,
+    "url": base_uri,
+    "scopes": scopes
+}}
+
+@app.get("/")
+def index(request: Request):
+    """
+    This is the index page
+    :param request:
+    :return:
+    """
+    state_redirect_uri = str(request.base_url) + "oauth/callback/easyVerein"
+    return templates.TemplateResponse("index.html", {"request": request, "ruri": state_redirect_uri})
+
+
+@app.post("/acquire")
+def acquire(request: Request, client_id: Annotated[str, Form()], client_secret: Annotated[str, Form()], url: Annotated[str, Form()], scopes: Annotated[str, Form()]):
+    """
+    This prepares the state and redirects to the select provider page
+    :param request:
+    :param content:
+    :param scopes:
+    :return:
+    """
+    state = str(uuid4())
+    states[state] = {
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "url": url,
+        "scopes": scopes.split(" ")
+    }
+    return RedirectResponse(f"/oauth/providers?state={state}", status_code=status.HTTP_303_SEE_OTHER)
 
 @app.get('/oauth/providers')
-def get_providers(request: Request):
-    state = str(uuid4())
+def get_providers(request: Request, state: str = "default"):
     code_challenge = hashlib.sha256(code_verifier.encode('utf-8')).digest()
     code_challenge = base64.urlsafe_b64encode(code_challenge).decode('utf-8').replace('=', '')
+    if not state in states:
+        return Response("Invalid state", status_code=400)
+    state_client_id = states[state]["client_id"]
+    state_base_uri = states[state]["url"]
+    state_redirect_uri = str(request.base_url) + "oauth/callback/easyVerein"
+    state_scopes = states[state]["scopes"]
 
     # get the authorization url
-    easyVerein_auth_url = f"{base_uri}{authorization_path}?response_type=code&code_challenge={code_challenge}&code_challenge_method=S256&client_id={client_id}&redirect_uri={redirect_uri}&scope={"%20".join(scopes)}"
-
+    easyVerein_auth_url = f"{state_base_uri}{authorization_path}?response_type=code&code_challenge={code_challenge}&code_challenge_method=S256&client_id={state_client_id}&redirect_uri={state_redirect_uri}&scope={"%20".join(state_scopes)}&state={state}"
+    
     return templates.TemplateResponse("providers.html",
                                       {"request": request, "easyVerein_auth_url": easyVerein_auth_url})
 
@@ -43,7 +84,7 @@ def get_button(request: Request):
 
 
 @app.get('/oauth/callback/easyVerein')
-def get_response_from_stack_exchange(code: str = "", error: str = ""):
+def get_response_from_stack_exchange(request: Request, code: str = "", error: str = "", state: str = "default"):
     if error:
         return HTMLResponse(f"""
         <body>
@@ -52,12 +93,20 @@ def get_response_from_stack_exchange(code: str = "", error: str = ""):
         </body>
         
         """)
-    resp = requests.post(f"{base_uri}{access_token_path}", data={
-        "client_id": client_id,
-        "client_secret": client_secret,
+    if not state in states:
+        return Response("Invalid state", status_code=400)
+
+    state_client_id = states[state]["client_id"]
+    state_client_secret = states[state]["client_secret"]
+    state_base_uri = states[state]["url"]
+    state_redirect_uri = str(request.base_url) + "oauth/callback/easyVerein"
+
+    resp = requests.post(f"{state_base_uri}{access_token_path}", data={
+        "client_id": state_client_id,
+        "client_secret": state_client_secret,
         "code": code,
         "code_verifier": code_verifier,
-        "redirect_uri": redirect_uri,
+        "redirect_uri": state_redirect_uri,
         "grant_type": "authorization_code"
     })
     if resp.status_code < 400:
@@ -68,11 +117,11 @@ def get_response_from_stack_exchange(code: str = "", error: str = ""):
 
     access_token = resp_json["access_token"]
 
-    user_response = requests.get(f"{base_uri}/api/latest/member/me", headers={
+    user_response = requests.get(f"{state_base_uri}/api/latest/member/me", headers={
         "Authorization": f"Bearer {access_token}"
     })
 
-    cd_response = requests.get(f"{base_uri}/api/latest/contact-details/me", headers={
+    cd_response = requests.get(f"{state_base_uri}/api/latest/contact-details/me", headers={
         "Authorization": f"Bearer {access_token}"
     })
 
@@ -85,7 +134,7 @@ def get_response_from_stack_exchange(code: str = "", error: str = ""):
         user_data = user_response.json()
         user_name = user_data["emailOrUserName"]
 
-    oidc_user_info_request = requests.get(f"{base_uri}/oauth2/userinfo/", headers={
+    oidc_user_info_request = requests.get(f"{state_base_uri}/oauth2/userinfo/", headers={
         "Authorization": f"Bearer {access_token}"
     })
 
@@ -98,7 +147,7 @@ def get_response_from_stack_exchange(code: str = "", error: str = ""):
         </head>
         <body>
             <h3>Success! {user_name}</h3>
-            <p>We've successfully obtained your EasyVerein access token!</p>
+            <p>We've successfully obtained your easyVerein access token!</p>
             <p>{resp_json}</p>
             <p>Verify ID Token <a href="https://jwt.io/">here</a></p>
             <p>Revoke token: <a href="/oauth/revoke?access_token={access_token}">here</a></p>
@@ -109,16 +158,21 @@ def get_response_from_stack_exchange(code: str = "", error: str = ""):
 
 
 @app.get("/oauth/revoke")
-def revoke_token(request: Request, access_token: str):
-    response = requests.post(f"{base_uri}/oauth2/revoke_token/",
-                             data=f"token={access_token}&client_id={client_id}&client_secret={client_secret}",
+def revoke_token(request: Request, access_token: str, state: str = "default"):
+    state_client_id = states[state]["client_id"]
+    state_client_secret = states[state]["client_secret"]
+    state_base_uri = states[state]["url"]
+
+
+    response = requests.post(f"{state_base_uri}/oauth2/revoke_token/",
+                             data=f"token={access_token}&client_id={state_client_id}&client_secret={state_client_secret}",
                              headers={"Content-Type": "application/x-www-form-urlencoded"})
     print(response)
     if response.status_code == 200:
         return HTMLResponse(
-            """
+            f"""
             <p>successful</p>
-            <a href="/oauth/providers/">Go back</a>
+            <a href="/oauth/providers?state={state}">Go back</a>
             """
         )
     else:

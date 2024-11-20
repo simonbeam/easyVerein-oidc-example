@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>easyVerein OIDC Test Client</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f2f2f2;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+
+        .form-container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            max-width: 400px;
+            width: 100%;
+            margin: 5px;
+        }
+
+        h2 {
+            text-align: center;
+            color: #333;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+        }
+
+        input[type="text"] {
+            width: 90%;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+
+        input[type="submit"] {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            width: 100%;
+        }
+
+        input[type="submit"]:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="form-container">
+        <h2>Test Client </h2>
+        <form action="/acquire" method="POST">
+            <div class="form-group">
+                <label for="client_id">Client ID</label>
+                <input type="text" id="client_id" name="client_id" required>
+            </div>
+            <div class="form-group">
+                <label for="client_secret">Client Secret</label>
+                <input type="text" id="client_secret" name="client_secret" required>
+            </div>
+            <div class="form-group">
+                <label for="scopes">Scopes (separated by space)</label>
+                <input type="text" id="scopes" name="scopes" required>
+            </div>
+            <div class="form-group">
+                <label for="url">easyVerein URL</label>
+                <input type="text" id="url" name="url" value="https://easyverein.com" required>
+            </div>
+            <p>The redirect uri of this client is <b>{{ruri}}</b></p>
+            <input type="submit" value="Submit">
+        </form>
+    </div>
+
+</body>
+</html>
