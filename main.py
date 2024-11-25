@@ -123,29 +123,30 @@ def get_response_from_stack_exchange(request: Request, code: str = "", error: st
         return HTMLResponse(resp.content.decode("utf-8"))
 
     access_token = resp_json["access_token"]
-
-    user_response = requests.get(f"{state_base_uri}/api/latest/member/me", headers={
-        "Authorization": f"Bearer {access_token}"
-    })
-
-    cd_response = requests.get(f"{state_base_uri}/api/latest/contact-details/me", headers={
-        "Authorization": f"Bearer {access_token}"
-    })
-
-    if cd_response.status_code == 200:
-        cd_data = cd_response.json()
-        print(cd_data)
-
     user_name = "Unknown :("
-    if user_response.status_code == 200:
-        user_data = user_response.json()
-        user_name = user_data["emailOrUserName"]
+    if not("localhost" in state_base_uri or "127.0.0.1" in state_base_uri) or ("localhost" in state_redirect_uri):
+        pass
+        user_response = requests.get(f"{state_base_uri}/api/latest/member/me", headers={
+            "Authorization": f"Bearer {access_token}"
+        })
 
-    oidc_user_info_request = requests.get(f"{state_base_uri}/oauth2/userinfo/", headers={
-        "Authorization": f"Bearer {access_token}"
-    })
+        cd_response = requests.get(f"{state_base_uri}/api/latest/contact-details/me", headers={
+            "Authorization": f"Bearer {access_token}"
+        })
 
-    print("The OIDC id token contains the following content:", oidc_user_info_request.text)
+        if cd_response.status_code == 200:
+            cd_data = cd_response.json()
+            print(cd_data)
+
+        if user_response.status_code == 200:
+            user_data = user_response.json()
+            user_name = user_data["emailOrUserName"]
+
+        oidc_user_info_request = requests.get(f"{state_base_uri}/oauth2/userinfo/", headers={
+            "Authorization": f"Bearer {access_token}"
+        })
+
+        print("The OIDC id token contains the following content:", oidc_user_info_request.text)
 
     html_content = f"""
     <html>
