@@ -19,6 +19,7 @@ client_id = os.getenv("client_id")
 client_secret = os.getenv("client_secret")
 authorization_path = "/oauth2/authorize/"
 base_uri = "https://easyverein.com"
+# base_uri = "http://localhost:8000"
 access_token_path = "/oauth2/token/"
 code_verifier = ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(random.randint(43, 128)))
 scopes = ['openid', 'myself', "profile"]
@@ -32,11 +33,20 @@ states = {"default": {
     "scopes": scopes
 }}
 
+
 def get_redirect_url(request: Request) -> str:
     base = str(request.base_url)
     base = base.split("://")[1]
     base = prefix + base
     return base + "oauth/callback/easyVerein"
+
+
+def get_post_logout_redirect_url(request: Request) -> str:
+    base = str(request.base_url)
+    base = base.split("://")[1]
+    base = prefix + base
+    return base + "oauth/adios/easyVerein"
+
 
 @app.get("/")
 def index(request: Request):
@@ -46,11 +56,15 @@ def index(request: Request):
     :return:
     """
     state_redirect_uri = get_redirect_url(request)
-    return templates.TemplateResponse("index.html", {"request": request, "ruri": state_redirect_uri})
+    post_logout_redirect_uri = get_post_logout_redirect_url(request)
+
+    return templates.TemplateResponse("index.html", {"request": request, "ruri": state_redirect_uri,
+                                                     "luri": post_logout_redirect_uri})
 
 
 @app.post("/acquire")
-def acquire(request: Request, client_id: Annotated[str, Form()], client_secret: Annotated[str, Form()], url: Annotated[str, Form()], scopes: Annotated[str, Form()]):
+def acquire(request: Request, client_id: Annotated[str, Form()], client_secret: Annotated[str, Form()],
+            url: Annotated[str, Form()], scopes: Annotated[str, Form()]):
     """
     This prepares the state and redirects to the select provider page
     :param request:
@@ -67,6 +81,7 @@ def acquire(request: Request, client_id: Annotated[str, Form()], client_secret: 
     }
     return RedirectResponse(f"/oauth/providers?state={state}", status_code=status.HTTP_303_SEE_OTHER)
 
+
 @app.get('/oauth/providers')
 def get_providers(request: Request, state: str = "default"):
     code_challenge = hashlib.sha256(code_verifier.encode('utf-8')).digest()
@@ -80,7 +95,7 @@ def get_providers(request: Request, state: str = "default"):
 
     # get the authorization url
     easyVerein_auth_url = f"{state_base_uri}{authorization_path}?response_type=code&code_challenge={code_challenge}&code_challenge_method=S256&client_id={state_client_id}&redirect_uri={state_redirect_uri}&scope={"%20".join(state_scopes)}&state={state}"
-    
+
     return templates.TemplateResponse("providers.html",
                                       {"request": request, "easyVerein_auth_url": easyVerein_auth_url})
 
@@ -108,14 +123,27 @@ def get_response_from_stack_exchange(request: Request, code: str = "", error: st
     state_base_uri = states[state]["url"]
     state_redirect_uri = get_redirect_url(request)
 
-    resp = requests.post(f"{state_base_uri}{access_token_path}", data={
-        "client_id": state_client_id,
-        "client_secret": state_client_secret,
-        "code": code,
-        "code_verifier": code_verifier,
-        "redirect_uri": state_redirect_uri,
-        "grant_type": "authorization_code"
-    })
+    code_exchange_data = {"client_id": state_client_id, "client_secret": state_client_secret, "code": code,
+                          "code_verifier": code_verifier, "redirect_uri": state_redirect_uri,
+                          "grant_type": "authorization_code"}
+
+    if not (
+            "localhost" in state_base_uri or "127.0.0.1" in state_base_uri or "0.0.0.0" in state_base_uri) and "localhost" in state_redirect_uri:
+        return HTMLResponse(""
+                            "<h1>Localhost testing</h1>"
+                            "It is impossible for the test client to perform the following request, because the test client cant access the server url per POST<br>"
+                            ""
+                            "Use Thunderclient or another tool to perform the following post request:<br>"
+                            f"POST <br>"
+                            f"<code>{state_base_uri}{access_token_path}<br>"
+                            f"data: {code_exchange_data}<br></code>"
+                            ""
+                            "Or use the following curl command:<br>"
+                            f"<code>curl -X POST {state_base_uri}{access_token_path} -d {code_exchange_data}</code><br>"
+
+                            "")
+
+    resp = requests.post(f"{state_base_uri}{access_token_path}", data=code_exchange_data)
     if resp.status_code < 400:
         print(resp.text)
         resp_json = resp.json()
@@ -124,8 +152,8 @@ def get_response_from_stack_exchange(request: Request, code: str = "", error: st
 
     access_token = resp_json["access_token"]
     user_name = "Unknown :("
-    if not("localhost" in state_base_uri or "127.0.0.1" in state_base_uri) or ("localhost" in state_redirect_uri):
-        pass
+    if ("localhost" in state_base_uri or "127.0.0.1" in state_base_uri) or not (
+            "localhost" in state_redirect_uri or "127.0.0.1" in state_redirect_uri or "0.0.0.0" in state_redirect_uri):
         user_response = requests.get(f"{state_base_uri}/api/latest/member/me", headers={
             "Authorization": f"Bearer {access_token}"
         })
@@ -148,6 +176,11 @@ def get_response_from_stack_exchange(request: Request, code: str = "", error: st
 
         print("The OIDC id token contains the following content:", oidc_user_info_request.text)
 
+    post_logout_redirect_uri = get_post_logout_redirect_url(request)
+
+    rp_logout_url = f"{state_base_uri}/oauth2/logout?client_id={state_client_id}&post_logout_redirect_uri={post_logout_redirect_uri}"
+    if "id_token" in resp_json:
+        rp_logout_url += f"&id_token_hint={resp_json.get('id_token')}"
     html_content = f"""
     <html>
         <head>
@@ -159,6 +192,9 @@ def get_response_from_stack_exchange(request: Request, code: str = "", error: st
             <p>{resp_json}</p>
             <p>Verify ID Token <a href="https://jwt.io/">here</a></p>
             <p>Revoke token: <a href="/oauth/revoke?access_token={access_token}">here</a></p>
+            <br/>
+            <br/>
+            <p>RP-Logout: <a href="{rp_logout_url}">Initiate</a></p>
         </body>
     </html>
     """
@@ -170,7 +206,6 @@ def revoke_token(request: Request, access_token: str, state: str = "default"):
     state_client_id = states[state]["client_id"]
     state_client_secret = states[state]["client_secret"]
     state_base_uri = states[state]["url"]
-
 
     response = requests.post(f"{state_base_uri}/oauth2/revoke_token/",
                              data=f"token={access_token}&client_id={state_client_id}&client_secret={state_client_secret}",
@@ -185,3 +220,8 @@ def revoke_token(request: Request, access_token: str, state: str = "default"):
         )
     else:
         return HTMLResponse("error")
+
+
+@app.get("/oauth/adios/easyVerein")
+def adios(request: Request):
+    return HTMLResponse("Successful!")
